@@ -1,0 +1,28 @@
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Editors
+.vscode/
+.idea/
+.DS_Store
+
+# Local notes / scratch
+scratch/
+*.local.md
+
+# Launch playbook — local-only, not for the public repo
+marketing/

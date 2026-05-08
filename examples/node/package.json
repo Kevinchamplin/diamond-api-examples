@@ -1,0 +1,15 @@
+{
+  "name": "diamond-api-examples-node",
+  "version": "1.0.0",
+  "description": "Node.js examples for the Diamond AI MLB prediction API",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "today": "node 01-predictions-today.js",
+    "value": "node 02-value-bets-alert.js",
+    "matchup": "node 03-team-matchup.js"
+  },
+  "license": "MIT"
+}

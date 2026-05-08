@@ -1,0 +1,352 @@
+openapi: 3.1.0
+info:
+  title: Diamond AI — MLB Prediction API
+  version: "1.0"
+  summary: Statistical MLB game predictions, Elo rankings, and value-bet detection.
+  description: |
+    Diamond AI is a logistic-regression model trained on 22,762 MLB games.
+    Validated accuracy 56.5% on held-out data; live accuracy 55.4% across 381 in-season picks.
+
+    All endpoints are GET, return JSON, and accept either an `X-Api-Key` header
+    or `?api_key=` query parameter. Rate limits reset daily at midnight Central Time.
+
+    Sign up free (100 calls/day) at https://diamond.champlinenterprises.com/signup.php.
+  contact:
+    name: Champlin Enterprises
+    email: kevin@champlinenterprises.com
+    url: https://diamond.champlinenterprises.com
+  license:
+    name: API Terms of Service
+    url: https://diamond.champlinenterprises.com/pricing.php
+  termsOfService: https://diamond.champlinenterprises.com/pricing.php
+
+servers:
+  - url: https://diamond.champlinenterprises.com/api/v1
+    description: Production
+
+security:
+  - ApiKeyHeader: []
+  - ApiKeyQuery: []
+
+tags:
+  - name: Predictions
+    description: Game outcome predictions
+  - name: Rankings
+    description: Team Elo ratings
+  - name: Value Bets
+    description: Edges vs Vegas consensus
+  - name: Accuracy
+    description: Live model performance metrics
+
+paths:
+  /predictions.php:
+    get:
+      tags: [Predictions]
+      summary: Daily predictions for all MLB games on a given date
+      operationId: getPredictions
+      parameters:
+        - name: date
+          in: query
+          description: ISO 8601 date (YYYY-MM-DD). Defaults to today.
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-05-08"
+      responses:
+        "200":
+          description: Predictions for the requested date
+          headers:
+            X-RateLimit-Limit: { $ref: "#/components/headers/RateLimitLimit" }
+            X-RateLimit-Remaining: { $ref: "#/components/headers/RateLimitRemaining" }
+            X-RateLimit-Reset: { $ref: "#/components/headers/RateLimitReset" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionsResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /model.php:
+    get:
+      tags: [Predictions]
+      summary: Single matchup prediction (Elo + logistic regression, no LLM)
+      operationId: getMatchup
+      parameters:
+        - name: home
+          in: query
+          required: true
+          description: Home team abbreviation (NYY, LAD, etc.)
+          schema: { type: string, example: "NYY" }
+        - name: away
+          in: query
+          required: true
+          description: Away team abbreviation
+          schema: { type: string, example: "BOS" }
+        - name: season
+          in: query
+          required: false
+          schema: { type: integer, example: 2026 }
+      responses:
+        "200":
+          description: Matchup prediction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchupResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /rankings.php:
+    get:
+      tags: [Rankings]
+      summary: All 30 MLB teams ranked by Elo
+      operationId: getRankings
+      parameters:
+        - name: season
+          in: query
+          required: false
+          schema: { type: integer, example: 2026 }
+      responses:
+        "200":
+          description: Team rankings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RankingsResponse"
+
+  /value-bets.php:
+    get:
+      tags: [Value Bets]
+      summary: Games where the model diverges from Vegas consensus
+      operationId: getValueBets
+      parameters:
+        - name: date
+          in: query
+          schema: { type: string, format: date }
+        - name: min_edge
+          in: query
+          description: Minimum edge percentage (e.g. 5 for 5%+)
+          schema: { type: number, example: 5 }
+      responses:
+        "200":
+          description: Value bets sorted by edge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValueBetsResponse"
+
+  /accuracy.php:
+    get:
+      tags: [Accuracy]
+      summary: Live model performance metrics
+      operationId: getAccuracy
+      parameters:
+        - name: season
+          in: query
+          schema: { type: integer }
+        - name: last
+          in: query
+          description: Last N predictions (1-500)
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        "200":
+          description: Accuracy snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccuracyResponse"
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    ApiKeyQuery:
+      type: apiKey
+      in: query
+      name: api_key
+
+  headers:
+    RateLimitLimit:
+      schema: { type: integer }
+      description: Daily request quota for your tier
+    RateLimitRemaining:
+      schema: { type: integer }
+      description: Requests remaining today
+    RateLimitReset:
+      schema: { type: integer }
+      description: Unix timestamp when the quota resets (midnight CT)
+
+  schemas:
+    Prediction:
+      type: object
+      properties:
+        game_id: { type: integer }
+        home_team: { type: string, example: "COL" }
+        away_team: { type: string, example: "HOU" }
+        predicted_winner: { type: string }
+        predicted_home_score: { type: integer }
+        predicted_away_score: { type: integer }
+        confidence: { type: number, description: "0-100" }
+        confidence_level:
+          type: string
+          enum: [low, medium, high]
+        model_probability: { type: number, format: float }
+        vegas_probability: { type: number, format: float }
+        consensus_probability: { type: number, format: float }
+        value_edge: { type: number }
+        reasoning: { type: string }
+        key_factors:
+          type: array
+          items: { type: string }
+
+    PredictionsResponse:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        model_version: { type: string, example: "1.0" }
+        count: { type: integer }
+        predictions:
+          type: array
+          items: { $ref: "#/components/schemas/Prediction" }
+
+    Team:
+      type: object
+      properties:
+        abbreviation: { type: string }
+        name: { type: string }
+        elo: { type: number }
+        momentum: { type: number }
+
+    MatchupResponse:
+      type: object
+      properties:
+        matchup:
+          type: object
+          properties:
+            home: { $ref: "#/components/schemas/Team" }
+            away: { $ref: "#/components/schemas/Team" }
+        prediction:
+          type: object
+          properties:
+            predicted_winner: { type: string }
+            home_win_probability: { type: number }
+            away_win_probability: { type: number }
+            confidence: { type: number }
+        features:
+          type: object
+          properties:
+            elo_diff: { type: number }
+            pitcher_diff: { type: number }
+            park_adj: { type: number }
+
+    Ranking:
+      type: object
+      properties:
+        rank: { type: integer }
+        team: { type: string }
+        name: { type: string }
+        elo: { type: number }
+        tier:
+          type: string
+          enum: [elite, contender, above_average, below_average, rebuilding, basement]
+        momentum: { type: number }
+        last_5: { type: string, example: "4-1" }
+
+    RankingsResponse:
+      type: object
+      properties:
+        season: { type: integer }
+        count: { type: integer }
+        baseline_elo: { type: integer, example: 1500 }
+        rankings:
+          type: array
+          items: { $ref: "#/components/schemas/Ranking" }
+
+    ValueBet:
+      type: object
+      properties:
+        game_id: { type: integer }
+        home_team: { type: string }
+        away_team: { type: string }
+        model_home_probability: { type: number }
+        vegas_home_probability: { type: number }
+        value_side:
+          type: string
+          enum: [home, away]
+        edge_pct: { type: number }
+        rating:
+          type: string
+          enum: [strong, moderate, slight, minimal]
+
+    ValueBetsResponse:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        count: { type: integer }
+        value_bets:
+          type: array
+          items: { $ref: "#/components/schemas/ValueBet" }
+        disclaimer: { type: string }
+
+    CalibrationBucket:
+      type: object
+      properties:
+        bucket: { type: string, example: "55-59" }
+        predictions: { type: integer }
+        actual_win_pct: { type: number }
+
+    AccuracyResponse:
+      type: object
+      properties:
+        season: { type: integer }
+        overall:
+          type: object
+          properties:
+            total_predictions: { type: integer }
+            correct: { type: integer }
+            accuracy_pct: { type: number }
+            brier_score: { type: number }
+        calibration:
+          type: array
+          items: { $ref: "#/components/schemas/CalibrationBucket" }
+        recent_form:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              games: { type: integer }
+              correct: { type: integer }
+              accuracy_pct: { type: number }
+        benchmarks:
+          type: object
+          properties:
+            coin_flip: { type: number }
+            vegas_consensus: { type: number }
+
+    Error:
+      type: object
+      properties:
+        error: { type: boolean, example: true }
+        code: { type: string }
+        message: { type: string }
+
+  responses:
+    BadRequest:
+      description: Invalid parameters
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Daily quota exceeded
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
